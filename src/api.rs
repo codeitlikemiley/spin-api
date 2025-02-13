@@ -8,7 +8,7 @@ use crate::{CreateTodo, Todo, UpdateTodo};
         title = "Todo API",
         version = "0.1.0",
         contact(name = "Uriah", email = "codeitlikemiley@gmail.com"),
-        license(name = "MIT")
+        license(name = "MIT", identifier = "MIT")
     ),
     paths(
         crate::handlers::todos::list_todos_handler,
