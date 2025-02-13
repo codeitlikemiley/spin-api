@@ -1,0 +1,19 @@
+[package]
+name = "app"
+authors = ["Uriah <codeitlikemiley@gmail.com>"]
+description = "Rust Spin App with Open API and Swagger UI"
+version = "0.1.0"
+rust-version = "1.78"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+spin-sdk = "3.1.0"
+utoipa = "5.3.1"
+
+[workspace]
