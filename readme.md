@@ -1,6 +1,6 @@
 ## Rust Spin + Open API + Swagger UI
 
-> Deployed on Spin Cloud with Key Value Store as Db
+> Deployed on Spin Cloud at https://app-h7qoscnn.fermyon.app/
 
 ## Development
 1. `spin watch`
