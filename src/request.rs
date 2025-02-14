@@ -11,3 +11,8 @@ pub(crate) struct UpdateTodo {
     pub(crate) title: Option<String>,
     pub(crate) completed: Option<bool>,
 }
+
+#[derive(ToSchema, Serialize, Deserialize, Clone)]
+pub(crate) struct Message<'a> {
+    pub(super) body: &'a str,
+}
