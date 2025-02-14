@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use crate::{CreateTodo, Todo, UpdateTodo};
+use crate::{models::LlmResponse, request::Message, CreateTodo, Todo, UpdateTodo};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -15,8 +15,9 @@ use crate::{CreateTodo, Todo, UpdateTodo};
         crate::handlers::todos::create_todo_handler,
         crate::handlers::todos::find_todo_handler,
         crate::handlers::todos::update_todo_handler,
-        crate::handlers::todos::delete_todo_handler
+        crate::handlers::todos::delete_todo_handler,
+        crate::handlers::llm::llm_handler,
     ),
-    components(schemas(Todo, CreateTodo, UpdateTodo))
+    components(schemas(Todo, CreateTodo, UpdateTodo, Message, LlmResponse))
 )]
 pub(crate) struct Api;
