@@ -3,6 +3,7 @@ pub mod handlers;
 pub mod models;
 pub mod request;
 
+use handlers::llm::llm_handler;
 use handlers::open_api::openapi_handler;
 use handlers::swagger::swagger_handler;
 
@@ -26,5 +27,6 @@ fn handle_route(req: Request) -> Response {
     router.put("/todos/:id", update_todo_handler);
     router.delete("/todos/:id", delete_todo_handler);
     router.get("/", swagger_handler);
+    router.post("/llm", llm_handler);
     router.handle(req)
 }
