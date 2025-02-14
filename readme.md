@@ -8,3 +8,6 @@
 ## Deployment
 1. `spin build`
 2. `spin deploy`
+
+## References
+[ai examples](https://github.com/fermyon/ai-examples)
