@@ -1,3 +1,4 @@
 target/
 .spin/
 Cargo.lock
+runtime-config.toml
