@@ -3,7 +3,12 @@ use utoipa::ToSchema;
 
 #[derive(ToSchema, Serialize, Deserialize, Clone)]
 pub(crate) struct Todo {
-    pub(crate) id: u64,
-    pub(crate) title: String,
-    pub(crate) completed: bool,
+    pub(super) id: u64,
+    pub(super) title: String,
+    pub(super) completed: bool,
+}
+
+#[derive(ToSchema, Serialize, Deserialize)]
+pub(crate) struct LlmResponse {
+    pub(super) response: String,
 }
