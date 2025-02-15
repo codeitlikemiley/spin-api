@@ -6,6 +6,9 @@ version = "0.1.0"
 authors = ["Uriah <codeitlikemiley@gmail.com>"]
 description = ""
 
+[variables]
+env = { default = "dev" }
+
 [[trigger.http]]
 route = "/..."
 component = "app"
@@ -14,6 +17,7 @@ component = "app"
 source = "target/wasm32-wasip1/release/app.wasm"
 allowed_outbound_hosts = []
 key_value_stores = ["default"]
+sqlite_databases = ["default"]
 
 [component.app.build]
 command = "cargo build --target wasm32-wasip1 --release"
