@@ -1,6 +1,8 @@
-## Rust Spin + Open API + Swagger UI
+## Spin Starter Template
 
-> Deployed on Spin Cloud at https://app-h7qoscnn.fermyon.app/
+- Use Command Query Responsibility Segregation (CQRS) Pattern
+- Swagger UI using utoipa for Open API compatibility
+- Spin Cloud for hosting
 
 ## Development
 
