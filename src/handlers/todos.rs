@@ -9,7 +9,7 @@ use crate::{
     request::{CreateTodo, UpdateTodo},
 };
 
-fn get_connection() -> anyhow::Result<Connection> {
+async fn get_connection() -> anyhow::Result<Connection> {
     Connection::open_default().context("Failed to open database connection")
 }
 
@@ -31,16 +31,16 @@ fn json_response<T: serde::Serialize>(status: u16, data: &T) -> anyhow::Result<R
         (status = 500, description = "Unexpected Error")
     )
 )]
-pub(crate) fn list_todos_handler(
+pub(crate) async fn list_todos_handler(
     _req: Request,
     _params: Params,
 ) -> anyhow::Result<impl IntoResponse> {
-    let todos = load_todos()?;
+    let todos = load_todos().await?;
     json_response(200, &todos)
 }
 
-fn load_todos() -> anyhow::Result<Vec<Todo>> {
-    let conn = get_connection()?;
+async fn load_todos() -> anyhow::Result<Vec<Todo>> {
+    let conn = get_connection().await?;
     let rows = conn.execute("SELECT id, title, completed FROM todos", &[])?;
     rows.rows().map(|row| Todo::from_row(&row)).collect()
 }
@@ -55,17 +55,17 @@ fn load_todos() -> anyhow::Result<Vec<Todo>> {
         (status = 500, description = "Unexpected Error")
     )
 )]
-pub(crate) fn create_todo_handler(
+pub(crate) async fn create_todo_handler(
     req: Request,
     _params: Params,
 ) -> anyhow::Result<impl IntoResponse> {
     let new_todo: CreateTodo = serde_json::from_slice(req.body())?;
-    let todo = create_todo(new_todo)?;
+    let todo = create_todo(new_todo).await?;
     json_response(201, &todo)
 }
 
-fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
-    let conn = get_connection()?;
+async fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
+    let conn = get_connection().await?;
     conn.execute(
         "INSERT INTO todos (title, completed) VALUES (?, false)",
         &[Value::Text(new.title.clone())],
@@ -96,7 +96,7 @@ fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
         ("id" = u64, Path, description = "Todo ID")
     )
 )]
-pub(crate) fn find_todo_handler(
+pub(crate) async fn find_todo_handler(
     _req: Request,
     params: Params,
 ) -> anyhow::Result<impl IntoResponse> {
@@ -105,12 +105,12 @@ pub(crate) fn find_todo_handler(
         .unwrap_or("0")
         .parse()
         .context("Invalid id")?;
-    let todo = find_todo(id)?;
+    let todo = find_todo(id).await?;
     json_response(200, &todo)
 }
 
-fn find_todo(id: u64) -> anyhow::Result<Todo> {
-    let conn = get_connection()?;
+async fn find_todo(id: u64) -> anyhow::Result<Todo> {
+    let conn = get_connection().await?;
     let rowset = conn
         .execute(
             "SELECT id, title, completed FROM todos WHERE id = ?",
@@ -143,7 +143,7 @@ fn find_todo(id: u64) -> anyhow::Result<Todo> {
         ("id" = u64, Path, description = "Todo ID")
     )
 )]
-pub(crate) fn update_todo_handler(
+pub(crate) async fn update_todo_handler(
     req: Request,
     params: Params,
 ) -> anyhow::Result<impl IntoResponse> {
@@ -153,12 +153,12 @@ pub(crate) fn update_todo_handler(
         .parse()
         .context("Invalid id")?;
     let update: UpdateTodo = serde_json::from_slice(req.body())?;
-    let todo = update_todo(id, update)?;
+    let todo = update_todo(id, update).await?;
     json_response(200, &todo)
 }
 
-fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
-    let conn = get_connection()?;
+async fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
+    let conn = get_connection().await?;
     let mut query = "UPDATE todos SET".to_string();
     let mut args = Vec::new();
 
@@ -177,7 +177,7 @@ fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
 
     let affected = conn.execute(&query, &args)?.rows.len();
     if affected > 0 {
-        find_todo(id)
+        find_todo(id).await
     } else {
         anyhow::bail!("Unexpected Error")
     }
@@ -196,7 +196,7 @@ fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
         ("id" = u64, Path, description = "Todo ID")
     )
 )]
-pub(crate) fn delete_todo_handler(
+pub(crate) async fn delete_todo_handler(
     _req: Request,
     params: Params,
 ) -> anyhow::Result<impl IntoResponse> {
@@ -205,12 +205,12 @@ pub(crate) fn delete_todo_handler(
         .unwrap_or("0")
         .parse()
         .context("Invalid id")?;
-    delete_todo(id)?;
+    delete_todo(id).await?;
     Ok(Response::builder().status(204).body(String::new()).build())
 }
 
-fn delete_todo(id: u64) -> anyhow::Result<()> {
-    let conn = get_connection()?;
+async fn delete_todo(id: u64) -> anyhow::Result<()> {
+    let conn = get_connection().await?;
     let affected = conn
         .execute(
             "DELETE FROM todos WHERE id = ?",

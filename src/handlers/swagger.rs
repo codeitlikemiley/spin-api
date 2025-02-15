@@ -1,6 +1,9 @@
 use spin_sdk::http::{IntoResponse, Params, Request, Response};
 
-pub(crate) fn swagger_handler(_req: Request, _params: Params) -> anyhow::Result<impl IntoResponse> {
+pub(crate) async fn swagger_handler(
+    _req: Request,
+    _params: Params,
+) -> anyhow::Result<impl IntoResponse> {
     let ui = r##"<!DOCTYPE html>
 <html lang="en">
 <head>

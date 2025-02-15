@@ -19,12 +19,12 @@ use crate::handlers::todos::{
 #[http_component]
 fn handle_route(req: Request) -> Response {
     let mut router = Router::new();
-    router.get("/openapi.json", openapi_handler);
-    router.get("/todos", list_todos_handler);
-    router.post("/todos", create_todo_handler);
-    router.get("/todos/:id", find_todo_handler);
-    router.put("/todos/:id", update_todo_handler);
-    router.delete("/todos/:id", delete_todo_handler);
-    router.get("/", swagger_handler);
+    router.get_async("/openapi.json", openapi_handler);
+    router.get_async("/todos", list_todos_handler);
+    router.post_async("/todos", create_todo_handler);
+    router.get_async("/todos/:id", find_todo_handler);
+    router.put_async("/todos/:id", update_todo_handler);
+    router.delete_async("/todos/:id", delete_todo_handler);
+    router.get_async("/", swagger_handler);
     router.handle(req)
 }
