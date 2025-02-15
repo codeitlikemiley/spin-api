@@ -1,17 +1,12 @@
 use anyhow::Context;
-use spin_sdk::{
-    http::{IntoResponse, Params, Request, Response},
-    sqlite::{Connection, Value},
-};
+use spin_sdk::http::{Params, Request, Response};
 
 use crate::{
+    commands::{create_todo, delete_todo, update_todo},
     models::Todo,
+    queries::{find_todo, load_todos},
     request::{CreateTodo, UpdateTodo},
 };
-
-async fn get_connection() -> anyhow::Result<Connection> {
-    Connection::open_default().context("Failed to open database connection")
-}
 
 fn json_response<T: serde::Serialize>(status: u16, data: &T) -> anyhow::Result<Response> {
     let body = serde_json::to_string(data)?;
@@ -31,18 +26,9 @@ fn json_response<T: serde::Serialize>(status: u16, data: &T) -> anyhow::Result<R
         (status = 500, description = "Unexpected Error")
     )
 )]
-pub(crate) async fn list_todos_handler(
-    _req: Request,
-    _params: Params,
-) -> anyhow::Result<impl IntoResponse> {
+pub(crate) async fn list_todos_handler(_req: Request, _params: Params) -> anyhow::Result<Response> {
     let todos = load_todos().await?;
     json_response(200, &todos)
-}
-
-async fn load_todos() -> anyhow::Result<Vec<Todo>> {
-    let conn = get_connection().await?;
-    let rows = conn.execute("SELECT id, title, completed FROM todos", &[])?;
-    rows.rows().map(|row| Todo::from_row(&row)).collect()
 }
 
 #[utoipa::path(
@@ -55,32 +41,10 @@ async fn load_todos() -> anyhow::Result<Vec<Todo>> {
         (status = 500, description = "Unexpected Error")
     )
 )]
-pub(crate) async fn create_todo_handler(
-    req: Request,
-    _params: Params,
-) -> anyhow::Result<impl IntoResponse> {
+pub(crate) async fn create_todo_handler(req: Request, _params: Params) -> anyhow::Result<Response> {
     let new_todo: CreateTodo = serde_json::from_slice(req.body())?;
     let todo = create_todo(new_todo).await?;
     json_response(201, &todo)
-}
-
-async fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
-    let conn = get_connection().await?;
-    conn.execute(
-        "INSERT INTO todos (title, completed) VALUES (?, false)",
-        &[Value::Text(new.title.clone())],
-    )?;
-    let id = conn
-        .execute("SELECT last_insert_rowid() AS id", &[])?
-        .rows()
-        .next()
-        .and_then(|row| row.get("id"))
-        .context("Failed to retrieve last inserted ID")?;
-    Ok(Todo {
-        id,
-        title: new.title,
-        completed: false,
-    })
 }
 
 #[utoipa::path(
@@ -96,10 +60,7 @@ async fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
         ("id" = u64, Path, description = "Todo ID")
     )
 )]
-pub(crate) async fn find_todo_handler(
-    _req: Request,
-    params: Params,
-) -> anyhow::Result<impl IntoResponse> {
+pub(crate) async fn find_todo_handler(_req: Request, params: Params) -> anyhow::Result<Response> {
     let id: u64 = params
         .get("id")
         .unwrap_or("0")
@@ -107,26 +68,6 @@ pub(crate) async fn find_todo_handler(
         .context("Invalid id")?;
     let todo = find_todo(id).await?;
     json_response(200, &todo)
-}
-
-async fn find_todo(id: u64) -> anyhow::Result<Todo> {
-    let conn = get_connection().await?;
-    let rowset = conn
-        .execute(
-            "SELECT id, title, completed FROM todos WHERE id = ?",
-            &[Value::Integer(id as i64)],
-        )?
-        .rows;
-    if let Some(row) = rowset.first() {
-        let todo = Todo {
-            id: row.get::<u64>(0).unwrap(),
-            title: row.get::<&str>(1).unwrap().to_string(),
-            completed: row.get(2).unwrap(),
-        };
-        Ok(todo)
-    } else {
-        anyhow::bail!("Unexpected Error")
-    }
 }
 
 #[utoipa::path(
@@ -143,10 +84,7 @@ async fn find_todo(id: u64) -> anyhow::Result<Todo> {
         ("id" = u64, Path, description = "Todo ID")
     )
 )]
-pub(crate) async fn update_todo_handler(
-    req: Request,
-    params: Params,
-) -> anyhow::Result<impl IntoResponse> {
+pub(crate) async fn update_todo_handler(req: Request, params: Params) -> anyhow::Result<Response> {
     let id: u64 = params
         .get("id")
         .unwrap_or("0")
@@ -155,32 +93,6 @@ pub(crate) async fn update_todo_handler(
     let update: UpdateTodo = serde_json::from_slice(req.body())?;
     let todo = update_todo(id, update).await?;
     json_response(200, &todo)
-}
-
-async fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
-    let conn = get_connection().await?;
-    let mut query = "UPDATE todos SET".to_string();
-    let mut args = Vec::new();
-
-    if let Some(title) = update.title {
-        query.push_str(" title = ?,");
-        args.push(Value::Text(title));
-    }
-    if let Some(completed) = update.completed {
-        query.push_str(" completed = ?,");
-        args.push(Value::Integer(completed as i64));
-    }
-
-    query.pop();
-    query.push_str(" WHERE id = ?");
-    args.push(Value::Integer(id as i64));
-
-    let affected = conn.execute(&query, &args)?.rows.len();
-    if affected > 0 {
-        find_todo(id).await
-    } else {
-        anyhow::bail!("Unexpected Error")
-    }
 }
 
 #[utoipa::path(
@@ -196,10 +108,7 @@ async fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
         ("id" = u64, Path, description = "Todo ID")
     )
 )]
-pub(crate) async fn delete_todo_handler(
-    _req: Request,
-    params: Params,
-) -> anyhow::Result<impl IntoResponse> {
+pub(crate) async fn delete_todo_handler(_req: Request, params: Params) -> anyhow::Result<Response> {
     let id: u64 = params
         .get("id")
         .unwrap_or("0")
@@ -207,20 +116,4 @@ pub(crate) async fn delete_todo_handler(
         .context("Invalid id")?;
     delete_todo(id).await?;
     Ok(Response::builder().status(204).body(String::new()).build())
-}
-
-async fn delete_todo(id: u64) -> anyhow::Result<()> {
-    let conn = get_connection().await?;
-    let affected = conn
-        .execute(
-            "DELETE FROM todos WHERE id = ?",
-            &[Value::Integer(id as i64)],
-        )?
-        .rows
-        .len();
-    if affected > 0 {
-        Ok(())
-    } else {
-        anyhow::bail!("Unexpected Error")
-    }
 }

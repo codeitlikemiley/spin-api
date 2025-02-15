@@ -1,7 +1,10 @@
-pub mod api;
-pub mod handlers;
-pub mod models;
-pub mod request;
+pub(crate) mod api;
+pub(crate) mod commands;
+pub(crate) mod db;
+pub(crate) mod handlers;
+pub(crate) mod models;
+pub(crate) mod queries;
+pub(crate) mod request;
 
 use handlers::open_api::openapi_handler;
 use handlers::swagger::swagger_handler;
@@ -17,7 +20,7 @@ use crate::handlers::todos::{
 };
 
 #[http_component]
-fn handle_route(req: Request) -> Response {
+async fn handle_route(req: Request) -> Response {
     let mut router = Router::new();
     router.get_async("/openapi.json", openapi_handler);
     router.get_async("/todos", list_todos_handler);
