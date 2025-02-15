@@ -1,7 +1,7 @@
 use anyhow::Context;
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
-    key_value::Store,
+    sqlite::{Connection, Value},
 };
 
 use crate::{
@@ -9,12 +9,26 @@ use crate::{
     request::{CreateTodo, UpdateTodo},
 };
 
+fn get_connection() -> anyhow::Result<Connection> {
+    Connection::open_default().context("Failed to open database connection")
+}
+
+fn json_response<T: serde::Serialize>(status: u16, data: &T) -> anyhow::Result<Response> {
+    let body = serde_json::to_string(data)?;
+    Ok(Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .body(body)
+        .build())
+}
+
 #[utoipa::path(
     get,
     path = "/todos",
     tags = ["Todos"],
     responses(
-        (status = 200, description = "List all todos", body = [Todo])
+        (status = 200, description = "List all todos", body = [Todo]),
+        (status = 500, description = "Unexpected Error")
     )
 )]
 pub(crate) fn list_todos_handler(
@@ -22,13 +36,13 @@ pub(crate) fn list_todos_handler(
     _params: Params,
 ) -> anyhow::Result<impl IntoResponse> {
     let todos = load_todos()?;
-    let body = serde_json::to_string(&todos)?;
-    Ok(Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .header("Access-Control-Allow-Origin", "*")
-        .body(body)
-        .build())
+    json_response(200, &todos)
+}
+
+fn load_todos() -> anyhow::Result<Vec<Todo>> {
+    let conn = get_connection()?;
+    let rows = conn.execute("SELECT id, title, completed FROM todos", &[])?;
+    rows.rows().map(|row| Todo::from_row(&row)).collect()
 }
 
 #[utoipa::path(
@@ -37,7 +51,8 @@ pub(crate) fn list_todos_handler(
     tags = ["Todos"],
     request_body = CreateTodo,
     responses(
-        (status = 201, description = "Todo created", body = Todo)
+        (status = 201, description = "Todo created", body = Todo),
+        (status = 500, description = "Unexpected Error")
     )
 )]
 pub(crate) fn create_todo_handler(
@@ -46,13 +61,26 @@ pub(crate) fn create_todo_handler(
 ) -> anyhow::Result<impl IntoResponse> {
     let new_todo: CreateTodo = serde_json::from_slice(req.body())?;
     let todo = create_todo(new_todo)?;
-    let body = serde_json::to_string(&todo)?;
-    Ok(Response::builder()
-        .status(201)
-        .header("content-type", "application/json")
-        .header("Access-Control-Allow-Origin", "*")
-        .body(body)
-        .build())
+    json_response(201, &todo)
+}
+
+fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
+    let conn = get_connection()?;
+    conn.execute(
+        "INSERT INTO todos (title, completed) VALUES (?, false)",
+        &[Value::Text(new.title.clone())],
+    )?;
+    let id = conn
+        .execute("SELECT last_insert_rowid() AS id", &[])?
+        .rows()
+        .next()
+        .and_then(|row| row.get("id"))
+        .context("Failed to retrieve last inserted ID")?;
+    Ok(Todo {
+        id,
+        title: new.title,
+        completed: false,
+    })
 }
 
 #[utoipa::path(
@@ -61,7 +89,8 @@ pub(crate) fn create_todo_handler(
     tags = ["Todos"],
     responses(
         (status = 200, description = "Todo found", body = Todo),
-        (status = 404, description = "Todo not found")
+        (status = 404, description = "Not Found"),
+        (status = 500, description = "Unexpected Error")
     ),
     params(
         ("id" = u64, Path, description = "Todo ID")
@@ -75,21 +104,28 @@ pub(crate) fn find_todo_handler(
         .get("id")
         .unwrap_or("0")
         .parse()
-        .context("invalid id")?;
-    if let Some(todo) = find_todo(id)? {
-        let body = serde_json::to_string(&todo)?;
-        Ok(Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
-            .body(body)
-            .build())
+        .context("Invalid id")?;
+    let todo = find_todo(id)?;
+    json_response(200, &todo)
+}
+
+fn find_todo(id: u64) -> anyhow::Result<Todo> {
+    let conn = get_connection()?;
+    let rowset = conn
+        .execute(
+            "SELECT id, title, completed FROM todos WHERE id = ?",
+            &[Value::Integer(id as i64)],
+        )?
+        .rows;
+    if let Some(row) = rowset.first() {
+        let todo = Todo {
+            id: row.get::<u64>(0).unwrap(),
+            title: row.get::<&str>(1).unwrap().to_string(),
+            completed: row.get(2).unwrap(),
+        };
+        Ok(todo)
     } else {
-        Ok(Response::builder()
-            .status(404)
-            .header("Access-Control-Allow-Origin", "*")
-            .body("Todo not found")
-            .build())
+        anyhow::bail!("Unexpected Error")
     }
 }
 
@@ -100,7 +136,8 @@ pub(crate) fn find_todo_handler(
     request_body = UpdateTodo,
     responses(
         (status = 200, description = "Todo updated", body = Todo),
-        (status = 404, description = "Todo not found")
+        (status = 404, description = "Todo not found"),
+        (status = 500, description = "Unexpected Error")
     ),
     params(
         ("id" = u64, Path, description = "Todo ID")
@@ -114,22 +151,35 @@ pub(crate) fn update_todo_handler(
         .get("id")
         .unwrap_or("0")
         .parse()
-        .context("invalid id")?;
+        .context("Invalid id")?;
     let update: UpdateTodo = serde_json::from_slice(req.body())?;
-    if let Some(todo) = update_todo(id, update)? {
-        let body = serde_json::to_string(&todo)?;
-        Ok(Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
-            .body(body)
-            .build())
+    let todo = update_todo(id, update)?;
+    json_response(200, &todo)
+}
+
+fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Todo> {
+    let conn = get_connection()?;
+    let mut query = "UPDATE todos SET".to_string();
+    let mut args = Vec::new();
+
+    if let Some(title) = update.title {
+        query.push_str(" title = ?,");
+        args.push(Value::Text(title));
+    }
+    if let Some(completed) = update.completed {
+        query.push_str(" completed = ?,");
+        args.push(Value::Integer(completed as i64));
+    }
+
+    query.pop();
+    query.push_str(" WHERE id = ?");
+    args.push(Value::Integer(id as i64));
+
+    let affected = conn.execute(&query, &args)?.rows.len();
+    if affected > 0 {
+        find_todo(id)
     } else {
-        Ok(Response::builder()
-            .status(404)
-            .header("Access-Control-Allow-Origin", "*")
-            .body("Todo not found")
-            .build())
+        anyhow::bail!("Unexpected Error")
     }
 }
 
@@ -138,7 +188,9 @@ pub(crate) fn update_todo_handler(
     path = "/todos/{id}",
     tags = ["Todos"],
     responses(
-        (status = 204, description = "Todo deleted")
+        (status = 204, description = "Todo deleted"),
+        (status = 404, description = "Not Found"),
+        (status = 500, description = "Unexpected Error")
     ),
     params(
         ("id" = u64, Path, description = "Todo ID")
@@ -152,80 +204,23 @@ pub(crate) fn delete_todo_handler(
         .get("id")
         .unwrap_or("0")
         .parse()
-        .context("invalid id")?;
-    if delete_todo(id)? {
-        Ok(Response::builder()
-            .status(204)
-            .header("Access-Control-Allow-Origin", "*")
-            .body("")
-            .build())
+        .context("Invalid id")?;
+    delete_todo(id)?;
+    Ok(Response::builder().status(204).body(String::new()).build())
+}
+
+fn delete_todo(id: u64) -> anyhow::Result<()> {
+    let conn = get_connection()?;
+    let affected = conn
+        .execute(
+            "DELETE FROM todos WHERE id = ?",
+            &[Value::Integer(id as i64)],
+        )?
+        .rows
+        .len();
+    if affected > 0 {
+        Ok(())
     } else {
-        Ok(Response::builder()
-            .status(404)
-            .header("Access-Control-Allow-Origin", "*")
-            .body("Todo not found")
-            .build())
-    }
-}
-
-fn load_todos() -> anyhow::Result<Vec<Todo>> {
-    let store = Store::open_default()?;
-    if let Some(todos) = store.get_json("todos")? {
-        Ok(todos)
-    } else {
-        Ok(vec![])
-    }
-}
-
-fn save_todos(todos: &[Todo]) -> anyhow::Result<()> {
-    let store = Store::open_default()?;
-    store.set_json("todos", &Vec::from(todos))?;
-    Ok(())
-}
-
-fn create_todo(new: CreateTodo) -> anyhow::Result<Todo> {
-    let mut todos = load_todos()?;
-    let new_id = todos.iter().map(|t| t.id).max().unwrap_or(0) + 1;
-    let todo = Todo {
-        id: new_id,
-        title: new.title,
-        completed: false,
-    };
-    todos.push(todo.clone());
-    save_todos(&todos)?;
-    Ok(todo)
-}
-
-fn find_todo(id: u64) -> anyhow::Result<Option<Todo>> {
-    let todos = load_todos()?;
-    Ok(todos.into_iter().find(|t| t.id == id))
-}
-
-fn update_todo(id: u64, update: UpdateTodo) -> anyhow::Result<Option<Todo>> {
-    let mut todos = load_todos()?;
-    if let Some(todo) = todos.iter_mut().find(|t| t.id == id) {
-        if let Some(title) = update.title {
-            todo.title = title;
-        }
-        if let Some(completed) = update.completed {
-            todo.completed = completed;
-        }
-        let updated = todo.clone();
-        save_todos(&todos)?;
-        Ok(Some(updated))
-    } else {
-        Ok(None)
-    }
-}
-
-fn delete_todo(id: u64) -> anyhow::Result<bool> {
-    let mut todos = load_todos()?;
-    let original_len = todos.len();
-    todos.retain(|t| t.id != id);
-    if todos.len() < original_len {
-        save_todos(&todos)?;
-        Ok(true)
-    } else {
-        Ok(false)
+        anyhow::bail!("Unexpected Error")
     }
 }
